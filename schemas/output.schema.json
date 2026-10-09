@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:novel-analysis-craft:output:1.0",
+  "$id": "urn:novel-analysis-craft:output:1.1",
   "title": "Novel Analysis Output and Checkpoint",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "work", "run", "coverage", "evidence", "stages",
+    "schema_version", "work", "run", "coverage", "source_chunks", "evidence", "stages",
     "claims", "technique_cards", "sops", "correction_log", "quality_review"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "const": "1.1" },
     "work": {
       "type": "object",
       "additionalProperties": false,
@@ -51,6 +51,20 @@
         "scope_note": { "type": "string" }
       }
     },
+    "source_chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "chapter_id", "sha256"],
+        "properties": {
+          "chunk_id": { "type": "string", "minLength": 1 },
+          "chapter_id": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "source_ref": { "type": "string" }
+        }
+      }
+    },
     "evidence": {
       "type": "array",
       "items": {
@@ -89,6 +103,7 @@
                     "required": ["beat_id", "event", "causal_link", "consequence", "evidence_refs"],
                     "properties": {
                       "beat_id": { "type": "string" },
+                      "chapter_id": { "type": "string" },
                       "event": { "type": "string" },
                       "causal_link": { "type": "string" },
                       "consequence": { "type": "string" },

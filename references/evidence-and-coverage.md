@@ -38,7 +38,7 @@
 使用三个集合，不要混为一谈：
 
 - expected_chapter_ids：用户明确声明此范围应包含的章节；
-- received_chapter_ids：已收到至少一段可分析材料的章节；
+- received_chapter_ids：已收到至少一段可分析材料的章节；口头声明、空文件和占位文字不计；
 - processed_chapter_ids：已完成至少一轮结构化梳理的章节。
 
 计算覆盖率时使用 processed / expected。若用户没有声明完整章节清单，覆盖率为 unknown，不得假称 100%。待处理或未收到章节必须显示在 pending 清单中。
@@ -57,13 +57,13 @@ checkpoint 至少保留：
 
 - work title、scope、depth、上次更新时间；
 - 预期、已收、已处理、待处理章节 ID；
-- 所有 source chunk 与 evidence ID；
+- 所有 source chunk 的 ID、章节 ID、内容 SHA-256 与可读取的来源位置，以及 evidence ID；哈希按 JSON 解码后的 `content` 字符串的 UTF-8 字节计算，checkpoint 不复制原文；
 - 每阶段状态与质量门槛；
 - claims、technique cards、SOP、未解决问题；
 - last_processed_chapter_id 和 next_action；
 - correction_log。
 
-恢复时先检查新旧 ID。相同 ID + 相同来源只算一次；相同 ID 内容不同则标记冲突并询问或重新分配 ID，不能静默覆盖。先处理未处理批次；只有当新证据可能影响既有结论时，才回查对应旧结论，并在 correction log 记录修改。
+恢复时先确认作品名一致，再检查新旧 chunk ID、章节 ID 与内容哈希。相同 ID + 相同章节 + 相同哈希只算一次；相同 ID 对应不同章节或内容则标记冲突并询问或重新分配 ID，不能静默覆盖。原来源无法重新读取时，不声称已复核旧证据。先处理未处理批次；只有当新证据可能影响既有结论时，才回查对应旧结论，并在 correction log 记录修改。
 
 ## 失败关闭规则
 

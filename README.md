@@ -12,7 +12,7 @@
 - schemas/：输入与输出 JSON Schema。
 - templates/：Markdown 输入、报告和技巧卡模板。
 - examples/：原创微型故事的输入与完整示例输出。
-- scripts/validate_output.py：仅使用 Python 标准库，检查核心必需字段、章节覆盖一致性和证据引用。
+- scripts/validate_output.py：仅使用 Python 标准库，检查核心必需字段、章节覆盖、来源批次和证据引用。
 
 ## 安装
 
@@ -55,7 +55,7 @@
 
 ## 示例
 
-查看 examples/quick-demo.input.json 和 examples/quick-demo.output.json。示例中的故事为本包原创短例，展示如何从三章输入创建可回溯的证据项、一个技巧卡和一条练习任务。
+查看 examples/quick-demo.input.json 和 examples/quick-demo.output.json。示例中的故事为本包原创短例；examples/quick-demo-resume.input.json 与 examples/quick-demo-resume.output.json 展示同一作品的第 4 章续跑和有据可查的结论修订。
 
 ## 可选结构检查
 
@@ -65,4 +65,14 @@
 python scripts/validate_output.py path/to/analysis-output.json
 ~~~
 
+续跑前可核对新批次与旧 checkpoint 是否属于同一作品，以及重复 chunk ID 是否保持同一章节和内容：
+
+~~~text
+python scripts/validate_output.py path/to/checkpoint.json --input path/to/new-batch.input.json
+~~~
+
+输出 schema 为 1.1，checkpoint 的 `source_chunks` 保存 chunk ID、章节 ID 和解码后内容的 UTF-8 SHA-256，不复制小说原文。旧版 1.0 checkpoint 缺少这份清单，续跑前需从原始输入重建。
+
 该检查器不需要第三方 Python 套件。它检查核心结构和引用链接，不能代替完整 JSON Schema 校验，也不能判断解释是否合理；分析仍须对照原文审阅。
+
+回归测试可运行 `python scripts/test_validate_output.py -v`；若环境安装了 `jsonschema`，测试还会核对所有随包示例与正式 JSON Schema 是否一致。

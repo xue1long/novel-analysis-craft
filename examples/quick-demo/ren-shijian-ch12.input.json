@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "work": {
+    "title": "人世间",
+    "author": "梁晓声",
+    "genre": "长篇小说 / 当代现实主义",
+    "language": "zh-CN"
+  },
+  "analysis": {
+    "mode": "quick",
+    "scope": "excerpt",
+    "focus": [
+      "quick 拆解",
+      "写作技巧卡"
+    ],
+    "output_format": "both"
+  },
+  "rights": {
+    "basis": "user_notes",
+    "confirmed": true,
+    "note": "用户声明：拥有这段摘录（已自行转写）+ 自写读书笔记；摘录与笔记非原文复制粘贴；本次仅做拆解与技巧迁移，不复现原文。"
+  },
+  "source": {
+    "expected_chapter_ids": [
+      "ch12"
+    ],
+    "chunks": [],
+    "source_note": "用户描述了材料，但本轮没有提供可见正文或笔记条目。"
+  }
+}
