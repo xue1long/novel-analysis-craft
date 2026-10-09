@@ -197,7 +197,8 @@ def main():
                 errors.append("run.status cannot be complete while expected chapters remain pending.")
         elif coverage.get("coverage_percent") is not None or coverage.get("completeness") != "unknown":
             errors.append("Without an expected chapter manifest, coverage_percent must be null and completeness must be unknown.")
-    if not processed:
+    title_only = isinstance(work, dict) and work.get("scope") == "title_only"
+    if not processed and not title_only:
         if run.get("status") == "complete":
             errors.append("run.status cannot be complete with no processed chapters.")
         for name, stage in stages.items():
@@ -226,8 +227,8 @@ def main():
     evidence_set = set(evidence_ids)
 
     def check_refs(refs, label):
-        if not isinstance(refs, list) or not refs:
-            errors.append(f"{label} must cite at least one evidence ID.")
+        if not isinstance(refs, list):
+            errors.append(f"{label}.evidence_refs must be an array.")
             return
         for ref in refs:
             if not isinstance(ref, str) or ref not in evidence_set:
@@ -243,6 +244,8 @@ def main():
         if claim.get("stage") not in STAGE_NAMES:
             errors.append(f"Claim {claim.get('claim_id', '?')} has an invalid stage.")
         check_refs(claim.get("evidence_refs"), f"claim {claim.get('claim_id', '?')}")
+        if claim.get("evidence_refs") == [] and (claim.get("kind") == "observation" or claim.get("confidence") != "low"):
+            errors.append(f"Claim {claim.get('claim_id', '?')} without source evidence must be a low-confidence inference or evaluation.")
     unique_values(claim_ids, "claims.claim_id", errors)
 
     card_ids = []
@@ -253,6 +256,8 @@ def main():
         if isinstance(card.get("card_id"), str):
             card_ids.append(card["card_id"])
         check_refs(card.get("evidence_refs"), f"technique card {card.get('card_id', '?')}")
+        if card.get("evidence_refs") == [] and card.get("confidence") != "low":
+            errors.append(f"Technique card {card.get('card_id', '?')} without source evidence must have low confidence.")
     unique_values(card_ids, "technique_cards.card_id", errors)
     card_set = set(card_ids)
 

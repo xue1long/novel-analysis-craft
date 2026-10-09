@@ -10,12 +10,12 @@
   },
   {
     "id": 2,
-    "name": "no-visible-material",
+    "name": "title-only-exploration",
     "scenario": "boundary",
-    "prompt": "我有某小说第 12 章前后的片段和自己的读书笔记，但本轮还没贴出文字。请先按 quick 深度建立 checkpoint。",
-    "expected": "请求可见材料；received 与 processed 均为空，evidence、claims 和 source_chunks 为空；五个正文阶段 blocked，不用占位文字冒充来源。",
+    "prompt": "我只知道书名《人世间》。请按 quick 深度先做探索性拆解，不必等我提供原文。",
+    "expected": "继续给出五阶段探索性分析；scope=title_only，coverage=unknown，未经原文核对的判断为低置信度推断或评价且 evidence_refs 为空；不伪造引文或章节定位。",
     "source_ref": "none",
-    "scope_hint": "excerpt；预期 ch12，但尚未收到材料"
+    "scope_hint": "title_only；尚未收到原文材料"
   },
   {
     "id": 3,

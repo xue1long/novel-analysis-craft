@@ -17,7 +17,7 @@
       "properties": {
         "title": { "type": "string", "minLength": 1 },
         "author": { "type": ["string", "null"] },
-        "scope": { "enum": ["complete_work", "selected_chapters", "excerpt", "notes"] },
+        "scope": { "enum": ["complete_work", "selected_chapters", "excerpt", "notes", "title_only"] },
         "scope_note": { "type": "string" }
       }
     },
@@ -107,7 +107,7 @@
                       "event": { "type": "string" },
                       "causal_link": { "type": "string" },
                       "consequence": { "type": "string" },
-                      "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+                      "evidence_refs": { "$ref": "#/$defs/stringArray" }
                     }
                   }
                 },
@@ -149,7 +149,7 @@
                       "characters": { "$ref": "#/$defs/stringArray" },
                       "function": { "type": "string" },
                       "deletion_test": { "type": "string" },
-                      "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+                      "evidence_refs": { "$ref": "#/$defs/stringArray" }
                     }
                   }
                 },
@@ -166,7 +166,7 @@
                       "weakness_or_belief": { "type": "string" },
                       "pressure_pattern": { "type": "string" },
                       "arc": { "type": "string" },
-                      "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+                      "evidence_refs": { "$ref": "#/$defs/stringArray" }
                     }
                   }
                 }
@@ -191,7 +191,7 @@
                       "proposition": { "type": "string" },
                       "expression": { "type": "string" },
                       "choice_or_cost": { "type": "string" },
-                      "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+                      "evidence_refs": { "$ref": "#/$defs/stringArray" }
                     }
                   }
                 },
@@ -206,7 +206,7 @@
                       "to_state": { "type": "string" },
                       "turn_event": { "type": "string" },
                       "plot_function": { "type": "string" },
-                      "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+                      "evidence_refs": { "$ref": "#/$defs/stringArray" }
                     }
                   }
                 },
@@ -286,7 +286,7 @@
           "kind": { "enum": ["observation", "inference", "evaluation"] },
           "statement": { "type": "string", "minLength": 1 },
           "confidence": { "enum": ["high", "medium", "low"] },
-          "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+          "evidence_refs": { "$ref": "#/$defs/stringArray" }
         }
       }
     },
@@ -311,7 +311,7 @@
           "conditions": { "type": "string" },
           "adaptation": { "type": "string" },
           "pitfalls": { "type": "string" },
-          "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" },
+          "evidence_refs": { "$ref": "#/$defs/stringArray" },
           "confidence": { "enum": ["high", "medium", "low"] },
           "sop_id": { "type": ["string", "null"] }
         }
@@ -347,7 +347,7 @@
           "reason": { "type": "string" },
           "previous_statement": { "type": "string" },
           "revised_statement": { "type": "string" },
-          "evidence_refs": { "$ref": "#/$defs/nonEmptyStringArray" }
+          "evidence_refs": { "$ref": "#/$defs/stringArray" }
         }
       }
     },

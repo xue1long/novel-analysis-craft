@@ -58,6 +58,41 @@ class ValidateOutputTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("no processed chapters", message)
 
+    def test_title_only_analysis_can_finish_with_tentative_claims(self):
+        output = copy.deepcopy(self.base)
+        output["work"]["scope"] = "title_only"
+        output["source_chunks"] = []
+        output["evidence"] = []
+        output["coverage"].update(expected_chapter_ids=[], received_chapter_ids=[], processed_chapter_ids=[], pending_chapter_ids=[], coverage_percent=None, completeness="unknown", last_processed_chapter_id=None)
+        output["run"]["status"] = "complete"
+        for claim in output["claims"]:
+            claim.update(kind="inference", confidence="low", evidence_refs=[])
+        for card in output["technique_cards"]:
+            card.update(confidence="low", evidence_refs=[])
+        status, message = self.check(output)
+        self.assertEqual(status, 0, message)
+        if importlib.util.find_spec("jsonschema"):
+            import jsonschema
+            schema = json.loads((ROOT / "schemas/output.schema.json").read_text(encoding="utf-8"))
+            jsonschema.Draft202012Validator(schema).validate(output)
+
+    def test_unsourced_observation_is_rejected(self):
+        output = copy.deepcopy(self.base)
+        output["claims"][0]["evidence_refs"] = []
+        status, message = self.check(output)
+        self.assertEqual(status, 1)
+        self.assertIn("low-confidence inference or evaluation", message)
+
+    @unittest.skipUnless(importlib.util.find_spec("jsonschema"), "optional jsonschema package unavailable")
+    def test_title_only_input_needs_no_rights_or_source(self):
+        import jsonschema
+
+        schema = json.loads((ROOT / "schemas/input.schema.json").read_text(encoding="utf-8"))
+        jsonschema.Draft202012Validator(schema).validate({
+            "schema_version": "1.0", "work": {"title": "A Novel"},
+            "analysis": {"mode": "quick", "scope": "title_only"},
+        })
+
     def test_missing_schema_required_next_action_fails(self):
         output = copy.deepcopy(self.base)
         del output["run"]["next_action"]
