@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -133,6 +134,34 @@ class ValidateOutputTests(unittest.TestCase):
         status, message = self.check(output)
         self.assertEqual(status, 1)
         self.assertIn("no processed chapters", message)
+
+    def partial_coverage_output(self, percent):
+        """Base output narrowed to two of three processed chapters, percent as declared."""
+        output = copy.deepcopy(self.base)
+        output["coverage"].update(processed_chapter_ids=["ch01", "ch02"],
+                                  pending_chapter_ids=["ch03"],
+                                  coverage_percent=percent,
+                                  completeness="partial",
+                                  last_processed_chapter_id="ch02")
+        output["run"]["status"] = "partial"
+        return output
+
+    def test_coverage_percent_precision_is_enforced(self):
+        """Two of three chapters is 66.7%; the old ±0.1 slack accepted the wrong 66.6."""
+        cases = ((66.7, True), (66.67, True), (66.6667, True), (66.6, False), (67, False))
+        for percent, accepted in cases:
+            with self.subTest(percent=percent):
+                status, message = self.check(self.partial_coverage_output(percent))
+                self.assertEqual(status, 0 if accepted else 1, message)
+                if not accepted:
+                    self.assertIn("coverage_percent should be 66.7", message)
+
+    def test_title_only_scope_conflicts_with_declared_chapters(self):
+        output = copy.deepcopy(self.base)
+        output["work"]["scope"] = "title_only"
+        status, message = self.check(output)
+        self.assertEqual(status, 1)
+        self.assertIn("work.scope title_only", message)
 
     def test_title_only_analysis_can_finish_with_tentative_claims(self):
         output = copy.deepcopy(self.base)
@@ -411,6 +440,28 @@ class ValidateOutputTests(unittest.TestCase):
             for path in ROOT.glob(f"examples/**/*.{kind}.json"):
                 with self.subTest(path=path.name):
                     jsonschema.Draft202012Validator(schema).validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+class DocumentationConsistencyTests(unittest.TestCase):
+    """Guard the SKILL.md rules the validator and the references depend on."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_antipattern_table_numbers_are_contiguous(self):
+        """Item 5: the blacklist rows are the skill's index into its own history."""
+        cells = [line.split("|")[1].strip() for line in self.skill.splitlines()
+                 if line.startswith("| ")]
+        numbers = [int(cell) for cell in cells if cell.isdigit()]
+        self.assertEqual(numbers, list(range(1, len(numbers) + 1)))
+
+    def test_section_references_resolve_to_headings(self):
+        """Item 4: a §-reference must name a heading that exists, not a remembered one."""
+        headings = set(re.findall(r"^## (\d+)\.", self.skill, re.MULTILINE))
+        for reference in re.findall(r"§ ?(\d+(?:\.\d+)?)", self.skill):
+            with self.subTest(reference=f"§{reference}"):
+                self.assertIn(reference, headings)
 
 
 if __name__ == "__main__":

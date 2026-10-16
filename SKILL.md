@@ -106,10 +106,10 @@ The final report must state the analyzed scope, depth, chapter coverage, phase g
 | # | 反模式 | 触发条件 | 为什么不要做 | 替代做法 |
 |---|---|---|---|---|
 | 1 | **把记忆中的信息冒充为已核对的原文证据** | 只有书名或材料未覆盖该细节 | 虚构的引文和定位无法追溯 | 继续给出明确标为待核实、低置信度的解读；不生成虚假的 evidence ID、原句或章节定位 |
-| 2 | **跨章节的"全部完成 / 整本完成"误报** | 用户只给了部分章节 | `coverage_percent=100`、`completeness=complete` 仅表示声明范围内的预期章节均已收到并处理，不表示整本完成 | 严格按 §1.5 的 coverage manifest 写三列；`work.scope` 选 selected_chapters/excerpt，scope_note 明示"本批仅覆盖声明范围" |
-| 3 | **技巧卡描述中带具体章节 / 场景 / 道具 / 关系** | 试图让技巧"具体可感" | 技巧卡的迁移性来自**抽象机制**，不是具体元素——列了"土坯胡同 + 寡妇 + 盲弟"就只对《人世间》有用 | 技巧卡只保留 mechanism / counterfactual / adaptation 三个抽象维度；用 adaptation 段说"在全新场景中……" |
-| 5 | **把零材料的探索性分析说成原文核验结果** | 只有书名，coverage 为 unknown | 用户无法分清已核对事实和试探性解读 | 使用 `title_only` 范围继续分析，将未核实判断标为低置信度，不填写虚假证据或章节覆盖 |
-| 6 | **超出声明范围做"全书评价"** | 用户的 scope=excerpt / selected | 全书评价所需的 evidence 永远不够 | 在 `work.scope_note` 显式写"本分析仅基于用户声明的 N 章 / N 段"，所有 strengths / limitations 限定在该范围内 |
-| 8 | **把缺乏依据的评价写成定论** | soul / technique 判断缺少可见支持 | 读者容易把猜测当成已核对结论 | 保留有用的解释，但标为低置信度或待核实；避免具体而无依据的细节 |
-| 9 | **把 `validate_output.py` 通过 = "分析完成"** | 看到"Structural check passed"就收工 | 脚本只查 JSON 结构与引用关系，**不查引用是否为真** | 有原文时抽查 evidence 能否回到来源；只有书名时核对所有未核实判断是否已明确标注 |
-| 10 | **练习题自带答案 / 自写范文** | 用户的练习题被代写 | 用户要的是"练习"而非"成品"；代写剥夺了用户的写作训练 | assignment 只写 prompt + rubric；评估草稿留给 draft_evaluation；自评只能在用户提交后才做 |
+| 2 | **跨章节的"全部完成 / 整本完成"误报** | 用户只给了部分章节 | `coverage_percent=100`、`completeness=complete` 仅表示声明范围内的预期章节均已收到并处理，不表示整本完成 | 严格按 `skill://novel-analysis-craft/references/evidence-and-coverage.md`「覆盖登记」写 expected / received / processed 三列；`work.scope` 选 selected_chapters/excerpt，scope_note 明示"本批仅覆盖声明范围" |
+| 3 | **技巧卡描述中带具体章节 / 场景 / 道具 / 关系** | 试图让技巧"具体可感" | 技巧卡的迁移性来自**抽象机制**，不是具体元素——列了"土坯胡同 + 寡妇 + 盲弟"就只对《人世间》有用 | 技巧卡仍按 output schema 填满全部字段（title / principle / observed_action / reader_effect / mechanism / counterfactual / conditions / adaptation / pitfalls / evidence_refs / confidence / sop_id）；"抽象"只体现在措辞上：title 与 principle 以机制命名，observed_action / mechanism / counterfactual / adaptation 只写结构动作，不出现具体章节号、专名、道具或人物关系。来源章节写进 evidence_refs / 来源范围，不写进描述 |
+| 4 | **把零材料的探索性分析说成原文核验结果** | 只有书名，coverage 为 unknown | 用户无法分清已核对事实和试探性解读 | 使用 `title_only` 范围继续分析，将未核实判断标为低置信度，不填写虚假证据或章节覆盖；`title_only` 时 coverage 四列章节 ID 必须为空 |
+| 5 | **超出声明范围做"全书评价"** | 用户的 scope=excerpt / selected | 全书评价所需的 evidence 永远不够 | 在 `work.scope_note` 显式写"本分析仅基于用户声明的 N 章 / N 段"，所有 strengths / limitations 限定在该范围内 |
+| 6 | **把缺乏依据的评价写成定论** | soul / technique 判断缺少可见支持 | 读者容易把猜测当成已核对结论 | 保留有用的解释，但标为低置信度或待核实；避免具体而无依据的细节 |
+| 7 | **把 `validate_output.py` 通过 = "分析完成"** | 看到"Structural check passed"就收工 | 脚本只查 JSON 结构与引用关系，**不查引用是否为真** | 有原文时抽查 evidence 能否回到来源；只有书名时核对所有未核实判断是否已明确标注 |
+| 8 | **练习题自带答案 / 自写范文** | 用户的练习题被代写 | 用户要的是"练习"而非"成品"；代写剥夺了用户的写作训练 | assignment 只写 prompt + rubric；评估草稿留给 draft_evaluation；自评只能在用户提交后才做 |

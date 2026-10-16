@@ -32,6 +32,7 @@ STRUCTURE_LABELS = {"opening", "setup", "climax", "ending", "unknown"}
 ASSIGNMENT_MIN_LENGTH = 500
 ASSIGNMENT_MAX_LENGTH = 1500
 RUBRIC_MIN_CRITERIA = 3
+COVERAGE_PERCENT_DECIMALS = 1
 
 # Required stage payloads. Presence and type are checked for every stage; the kinds
 # "string", "string_array", and "required_array" additionally demand substance once a
@@ -518,8 +519,13 @@ def main():
                 errors.append("pending_chapter_ids must equal expected_chapter_ids minus processed_chapter_ids.")
             calculated_percent = 100 * len(set(processed)) / len(set(expected))
             actual_percent = coverage.get("coverage_percent")
-            if isinstance(actual_percent, bool) or not isinstance(actual_percent, (int, float)) or abs(actual_percent - calculated_percent) > 0.1:
-                errors.append(f"coverage_percent should be {calculated_percent:.1f} for the declared chapter sets.")
+            # Match at the reported precision instead of allowing a flat 0.1 slack:
+            # two of three chapters is 66.7, so 66.6 is a wrong number, not a rounding.
+            if (not is_number(actual_percent)
+                    or round(actual_percent, COVERAGE_PERCENT_DECIMALS)
+                    != round(calculated_percent, COVERAGE_PERCENT_DECIMALS)):
+                errors.append("coverage_percent should be "
+                              f"{round(calculated_percent, COVERAGE_PERCENT_DECIMALS)} for the declared chapter sets.")
             if calculated_pending and coverage.get("completeness") != "partial":
                 errors.append("completeness must be partial while expected chapters remain pending.")
             if not calculated_pending and coverage.get("completeness") != "complete":
@@ -531,6 +537,12 @@ def main():
     if is_number(coverage.get("coverage_percent")) and not 0 <= coverage["coverage_percent"] <= 100:
         errors.append("coverage_percent must be between 0 and 100.")
     title_only = isinstance(work, dict) and work.get("scope") == "title_only"
+    if title_only:
+        declared = [values for values in (expected, received, processed, pending)
+                    if isinstance(values, list) and values]
+        if declared:
+            errors.append("work.scope title_only means no source material is visible, so coverage must list no "
+                          "chapters; use complete_work, selected_chapters, excerpt, or notes when chapters were supplied.")
     if not processed and not title_only:
         if run.get("status") == "complete":
             errors.append("run.status cannot be complete with no processed chapters.")

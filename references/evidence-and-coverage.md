@@ -42,6 +42,10 @@
 
 计算覆盖率时使用 processed / expected。若用户没有声明完整章节清单，覆盖率为 unknown，不得假称 100%。待处理或未收到章节必须显示在 pending 清单中。
 
+coverage_percent 统一按一位小数的百分数写出，数值必须等于 processed / expected 四舍五入到一位小数的结果：声明 3 章、处理 2 章即 66.7，写 66.6 或 67 都算错，而不是"四舍五入误差"。只有能整除的值（0、25、50、100 等）才写成整数。
+
+`work.scope` 为 `title_only` 时表示没有可见材料，四列章节 ID 必须全部为空、coverage_percent 为 null、completeness 为 unknown；一旦拿到章节材料，改用 complete_work / selected_chapters / excerpt / notes，不得同时声明 `title_only` 与已处理章节。
+
 completeness 取值：
 
 - complete：已声明的分析范围内，每个预期章节均收到且已处理；
