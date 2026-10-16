@@ -19,10 +19,329 @@ VALID_STAGE_STATUS = {"not_started", "partial", "complete", "blocked"}
 VALID_GATES = {"not_checked", "pass", "revise", "blocked"}
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
+# Controlled vocabularies, mirroring references/schemas/output.schema.json.
+WORK_SCOPES = {"complete_work", "selected_chapters", "excerpt", "notes", "title_only"}
+RUN_MODES = {"quick", "standard", "deep"}
+RUN_STATUSES = {"in_progress", "partial", "complete", "blocked"}
+COMPLETENESS_VALUES = {"complete", "partial", "unknown"}
+CLAIM_KINDS = {"observation", "inference", "evaluation"}
+CONFIDENCE_LEVELS = {"high", "medium", "low"}
+DRAFT_STATUSES = {"not_submitted", "submitted_not_evaluated", "evaluated"}
+STRUCTURE_LABELS = {"opening", "setup", "climax", "ending", "unknown"}
+
+ASSIGNMENT_MIN_LENGTH = 500
+ASSIGNMENT_MAX_LENGTH = 1500
+RUBRIC_MIN_CRITERIA = 3
+
+# Required stage payloads. Presence and type are checked for every stage; the kinds
+# "string", "string_array", and "required_array" additionally demand substance once a
+# stage is marked complete. "array" and "optional_string_array" stay empty-able because
+# the workflow allows "none evidenced" (e.g. no subplot, no limitation worth listing).
+STAGE_FIELD_KINDS = {
+    "skeleton": {
+        "synopsis": "string",
+        "one_sentence_story": "string",
+        "causal_beats": "required_array",
+        "structure_points": "required_array",
+    },
+    "flesh": {"subplots": "array", "characters": "required_array"},
+    "soul": {
+        "themes": "required_array",
+        "emotional_arc": "required_array",
+        "strengths": "optional_string_array",
+        "limitations": "optional_string_array",
+    },
+    "technique": {"technique_card_ids": "string_array"},
+    "practice": {
+        "selected_card_id": "nullable_string",
+        "sop_ids": "string_array",
+        "assignment": "object_or_null",
+        "draft_status": "string",
+        "draft_evaluation": "object_or_null",
+    },
+}
+STAGE_ITEM_STRING_FIELDS = {
+    ("skeleton", "causal_beats"): ("beat_id", "event", "causal_link", "consequence"),
+    ("skeleton", "structure_points"): ("event",),
+    ("flesh", "subplots"): ("name", "function", "deletion_test"),
+    ("flesh", "characters"): ("name", "role", "desire", "weakness_or_belief",
+                              "pressure_pattern", "arc"),
+    ("soul", "themes"): ("proposition", "expression", "choice_or_cost"),
+    ("soul", "emotional_arc"): ("from_state", "to_state", "turn_event", "plot_function"),
+}
+STAGE_ITEM_ARRAY_FIELDS = {
+    ("flesh", "subplots"): ("chapters", "characters"),
+}
+STAGE_ITEM_NULLABLE_FIELDS = {
+    ("skeleton", "structure_points"): ("chapter_id",),
+}
+CLAIM_STRING_FIELDS = ("statement",)
+CARD_STRING_FIELDS = ("title", "principle", "observed_action", "reader_effect",
+                      "counterfactual", "conditions", "adaptation", "pitfalls")
+CARD_ARRAY_FIELDS = ("mechanism",)
+SOP_STRING_FIELDS = ("name", "technique_card_id", "goal", "use_when", "originality_note")
+SOP_ARRAY_FIELDS = ("steps", "checks", "failure_signals")
+QUALITY_REVIEW_ARRAY_FIELDS = ("strengths", "limitations", "unresolved_questions")
+QUALITY_CHECKLIST_FIELDS = ("evidence_resolved", "coverage_honest",
+                            "five_stages_reported", "practice_status_honest")
+CORRECTION_LOG_FIELDS = ("entity_id", "reason", "previous_statement", "revised_statement")
+RUBRIC_FIELDS = ("criterion", "score_0", "score_1", "score_2")
+
 
 def unique_values(values, label, errors):
     if len(values) != len(set(values)):
         errors.append(f"{label} contains duplicate IDs.")
+
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def require_strings(item, label, fields, errors, strict=True):
+    """Every named field must hold a string; strict rejects blank values."""
+    expectation = "a non-empty string" if strict else "a string"
+    for field in fields:
+        value = item.get(field)
+        if not isinstance(value, str) or (strict and not value.strip()):
+            errors.append(f"{label}.{field} must be {expectation}.")
+
+
+def require_string_arrays(item, label, fields, errors, non_empty=False):
+    for field in fields:
+        value = item.get(field)
+        if not isinstance(value, list) or any(not isinstance(entry, str) for entry in value):
+            errors.append(f"{label}.{field} must be an array of strings.")
+        elif non_empty and not value:
+            errors.append(f"{label}.{field} must not be empty.")
+
+
+def require_enum(item, label, field, allowed, errors):
+    if item.get(field) not in allowed:
+        errors.append(f"{label}.{field} must be one of {', '.join(sorted(allowed))}.")
+
+
+def require_field_kind(item, label, field, kind, errors, strict=True):
+    if field not in item:
+        errors.append(f"{label}.{field} is required.")
+        return
+    value = item[field]
+    if kind == "string":
+        require_strings(item, label, (field,), errors, strict=strict)
+    elif kind == "string_array":
+        require_string_arrays(item, label, (field,), errors, non_empty=strict)
+    elif kind == "optional_string_array":
+        require_string_arrays(item, label, (field,), errors)
+    elif kind in ("array", "required_array"):
+        if not isinstance(value, list):
+            errors.append(f"{label}.{field} must be an array.")
+        elif strict and kind == "required_array" and not value:
+            errors.append(f"{label}.{field} must not be empty in a complete stage.")
+    elif kind == "nullable_string" and value is not None and not isinstance(value, str):
+        errors.append(f"{label}.{field} must be a string or null.")
+    elif kind == "object_or_null" and value is not None and not isinstance(value, dict):
+        errors.append(f"{label}.{field} must be an object or null.")
+
+
+def require_citation_field(item, label, errors):
+    """Citation-bearing objects must state evidence_refs, even as an empty list."""
+    if "evidence_refs" not in item:
+        errors.append(f"{label}.evidence_refs is required (use [] when nothing is cited).")
+        return
+    require_string_arrays(item, label, ("evidence_refs",), errors)
+
+
+def check_refs(refs, label, evidence_set, errors):
+    """label names the citing object; its evidence_refs field is reported by path."""
+    field = f"{label}.evidence_refs"
+    if not isinstance(refs, list):
+        errors.append(f"{field} must be an array.")
+        return
+    for ref in refs:
+        if not isinstance(ref, str) or ref not in evidence_set:
+            errors.append(f"{field} refers to missing evidence ID {ref!r}.")
+
+
+def iter_evidence_refs(node, path):
+    """Yield (owner path, refs) for every evidence_refs array so nested citations cannot hide."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "evidence_refs":
+                yield path, value
+            else:
+                yield from iter_evidence_refs(value, f"{path}.{key}")
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            yield from iter_evidence_refs(item, f"{path}[{index}]")
+
+
+def check_claims(claims, evidence_set, errors):
+    claim_ids = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            errors.append("Each claim must be an object.")
+            continue
+        claim_id = claim.get("claim_id")
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            errors.append("Claim is missing a non-empty claim_id.")
+        else:
+            claim_ids.append(claim_id)
+        label = f"claim {claim_id if isinstance(claim_id, str) else '?'}"
+        require_enum(claim, label, "stage", STAGE_NAMES, errors)
+        require_enum(claim, label, "kind", CLAIM_KINDS, errors)
+        require_enum(claim, label, "confidence", CONFIDENCE_LEVELS, errors)
+        require_strings(claim, label, CLAIM_STRING_FIELDS, errors)
+        check_refs(claim.get("evidence_refs"), label, evidence_set, errors)
+        if claim.get("evidence_refs") == [] and (claim.get("kind") == "observation"
+                                                 or claim.get("confidence") != "low"):
+            errors.append(f"{label} without source evidence must be a low-confidence inference or evaluation.")
+    unique_values(claim_ids, "claims.claim_id", errors)
+    return claim_ids
+
+
+def check_cards(cards, evidence_set, errors):
+    card_ids = []
+    for card in cards:
+        if not isinstance(card, dict):
+            errors.append("Each technique card must be an object.")
+            continue
+        card_id = card.get("card_id")
+        if not isinstance(card_id, str) or not card_id.strip():
+            errors.append("Technique card is missing a non-empty card_id.")
+        else:
+            card_ids.append(card_id)
+        label = f"technique card {card_id if isinstance(card_id, str) else '?'}"
+        require_strings(card, label, CARD_STRING_FIELDS, errors)
+        require_string_arrays(card, label, CARD_ARRAY_FIELDS, errors, non_empty=True)
+        require_enum(card, label, "confidence", CONFIDENCE_LEVELS, errors)
+        check_refs(card.get("evidence_refs"), label, evidence_set, errors)
+        if card.get("evidence_refs") == [] and card.get("confidence") != "low":
+            errors.append(f"{label} without source evidence must have low confidence.")
+        require_field_kind(card, label, "sop_id", "nullable_string", errors)
+    unique_values(card_ids, "technique_cards.card_id", errors)
+    return card_ids
+
+
+def check_sops(sops, card_set, errors):
+    sop_ids = []
+    for sop in sops:
+        if not isinstance(sop, dict):
+            errors.append("Each SOP must be an object.")
+            continue
+        sop_id = sop.get("sop_id")
+        if not isinstance(sop_id, str) or not sop_id.strip():
+            errors.append("SOP is missing a non-empty sop_id.")
+        else:
+            sop_ids.append(sop_id)
+        label = f"SOP {sop_id if isinstance(sop_id, str) else '?'}"
+        require_strings(sop, label, SOP_STRING_FIELDS, errors)
+        require_string_arrays(sop, label, SOP_ARRAY_FIELDS, errors, non_empty=True)
+        if not isinstance(sop.get("technique_card_id"), str) or sop["technique_card_id"] not in card_set:
+            errors.append(f"{label} refers to a missing technique card.")
+    unique_values(sop_ids, "sops.sop_id", errors)
+    return sop_ids
+
+
+def check_stage_payloads(stages, errors):
+    """Required stage fields and nested item fields; values must be substantive once complete."""
+    for name, fields in STAGE_FIELD_KINDS.items():
+        stage = stages.get(name)
+        if not isinstance(stage, dict):
+            continue
+        strict = stage.get("status") == "complete"
+        for field, kind in fields.items():
+            require_field_kind(stage, f"stages.{name}", field, kind, errors, strict=strict)
+    for (name, field), required in STAGE_ITEM_STRING_FIELDS.items():
+        stage = stages.get(name)
+        items = stage.get(field) if isinstance(stage, dict) else None
+        if not isinstance(items, list):
+            continue
+        strict = stage.get("status") == "complete"
+        for index, item in enumerate(items):
+            label = f"stages.{name}.{field}[{index}]"
+            if not isinstance(item, dict):
+                errors.append(f"{label} must be an object.")
+                continue
+            require_strings(item, label, required, errors, strict=strict)
+            require_string_arrays(item, label, STAGE_ITEM_ARRAY_FIELDS.get((name, field), ()),
+                                  errors, non_empty=strict)
+            require_citation_field(item, label, errors)
+            for nullable in STAGE_ITEM_NULLABLE_FIELDS.get((name, field), ()):
+                require_field_kind(item, label, nullable, "nullable_string", errors)
+    skeleton = stages.get("skeleton")
+    points = skeleton.get("structure_points") if isinstance(skeleton, dict) else None
+    if isinstance(points, list):
+        for index, point in enumerate(points):
+            if isinstance(point, dict):
+                require_enum(point, f"stages.skeleton.structure_points[{index}]",
+                             "label", STRUCTURE_LABELS, errors)
+
+
+def check_practice(practice, card_set, sop_set, errors):
+    if not isinstance(practice, dict):
+        return
+    require_enum(practice, "stages.practice", "draft_status", DRAFT_STATUSES, errors)
+    selected = practice.get("selected_card_id")
+    if selected is not None and (not isinstance(selected, str) or selected not in card_set):
+        errors.append("stages.practice.selected_card_id must be null or refer to an existing technique card.")
+    listed_sops = practice.get("sop_ids")
+    if isinstance(listed_sops, list) and any(not isinstance(item, str) or item not in sop_set
+                                            for item in listed_sops):
+        errors.append("stages.practice.sop_ids must refer to existing SOPs.")
+    assignment = practice.get("assignment")
+    if assignment is None:
+        return
+    if not isinstance(assignment, dict):
+        return
+    label = "stages.practice.assignment"
+    require_strings(assignment, label, ("technique_card_id", "prompt"), errors)
+    if not isinstance(assignment.get("technique_card_id"), str) or assignment["technique_card_id"] not in card_set:
+        errors.append("Practice assignment refers to a missing technique card.")
+    minimum = assignment.get("target_length_min")
+    maximum = assignment.get("target_length_max")
+    if not is_number(minimum) or minimum < ASSIGNMENT_MIN_LENGTH:
+        errors.append(f"{label}.target_length_min must be a number >= {ASSIGNMENT_MIN_LENGTH}.")
+    if not is_number(maximum) or maximum > ASSIGNMENT_MAX_LENGTH:
+        errors.append(f"{label}.target_length_max must be a number <= {ASSIGNMENT_MAX_LENGTH}.")
+    if is_number(minimum) and is_number(maximum) and maximum < minimum:
+        errors.append(f"{label}.target_length_max must not be below target_length_min.")
+    rubric = assignment.get("rubric")
+    if not isinstance(rubric, list) or len(rubric) < RUBRIC_MIN_CRITERIA:
+        errors.append(f"{label}.rubric needs at least {RUBRIC_MIN_CRITERIA} criteria.")
+    else:
+        for index, criterion in enumerate(rubric):
+            if not isinstance(criterion, dict):
+                errors.append(f"{label}.rubric[{index}] must be an object.")
+                continue
+            require_strings(criterion, f"{label}.rubric[{index}]", RUBRIC_FIELDS, errors)
+    if practice.get("draft_status") == "evaluated" and practice.get("draft_evaluation") is None:
+        errors.append("Practice draft is marked evaluated but draft_evaluation is null.")
+
+
+def check_quality_review(review, errors):
+    if not isinstance(review, dict):
+        errors.append("quality_review must be an object.")
+        return
+    require_string_arrays(review, "quality_review", QUALITY_REVIEW_ARRAY_FIELDS, errors)
+    checklist = review.get("checklist")
+    if not isinstance(checklist, dict):
+        errors.append("quality_review.checklist must be an object.")
+        return
+    for field in QUALITY_CHECKLIST_FIELDS:
+        if not isinstance(checklist.get(field), bool):
+            errors.append(f"quality_review.checklist.{field} must be a boolean.")
+
+
+def check_correction_log(entries, evidence_set, known_ids, errors, warnings):
+    for index, entry in enumerate(entries):
+        label = f"correction_log[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"Each {label} entry must be an object.")
+            continue
+        require_strings(entry, label, CORRECTION_LOG_FIELDS, errors)
+        check_refs(entry.get("evidence_refs"), label, evidence_set, errors)
+        entity_id = entry.get("entity_id")
+        if isinstance(entity_id, str) and entity_id.strip() and entity_id not in known_ids:
+            warnings.append(f"{label}.entity_id {entity_id!r} matches no claim, technique card, SOP, or evidence ID.")
 
 
 def main():
@@ -55,6 +374,8 @@ def main():
     work = data.get("work")
     if not isinstance(work, dict) or not isinstance(work.get("title"), str) or not work["title"].strip():
         errors.append("work.title must be a non-empty string.")
+    if isinstance(work, dict):
+        require_enum(work, "work", "scope", WORK_SCOPES, errors)
     run = data.get("run")
     if not isinstance(run, dict):
         errors.append("run must be an object.")
@@ -62,6 +383,8 @@ def main():
     for field in ("mode", "status", "updated_at", "next_action"):
         if not isinstance(run.get(field), str):
             errors.append(f"run.{field} must be a string.")
+    require_enum(run, "run", "mode", RUN_MODES, errors)
+    require_enum(run, "run", "status", RUN_STATUSES, errors)
 
     coverage = data.get("coverage", {})
     evidence = data.get("evidence", [])
@@ -70,10 +393,15 @@ def main():
     claims = data.get("claims", [])
     cards = data.get("technique_cards", [])
     sops = data.get("sops", [])
+    correction_log = data.get("correction_log", [])
+    quality_review = data.get("quality_review")
 
     if not isinstance(coverage, dict):
         coverage = {}
         errors.append("coverage must be an object.")
+    else:
+        require_enum(coverage, "coverage", "completeness", COMPLETENESS_VALUES, errors)
+        require_strings(coverage, "coverage", ("scope_note",), errors)
     if not isinstance(evidence, list):
         evidence = []
         errors.append("evidence must be an array.")
@@ -92,6 +420,9 @@ def main():
     if not isinstance(sops, list):
         sops = []
         errors.append("sops must be an array.")
+    if not isinstance(correction_log, list):
+        correction_log = []
+        errors.append("correction_log must be an array.")
 
     chapter_of_chunk = {}
     for chunk in source_chunks:
@@ -197,6 +528,8 @@ def main():
                 errors.append("run.status cannot be complete while expected chapters remain pending.")
         elif coverage.get("coverage_percent") is not None or coverage.get("completeness") != "unknown":
             errors.append("Without an expected chapter manifest, coverage_percent must be null and completeness must be unknown.")
+    if is_number(coverage.get("coverage_percent")) and not 0 <= coverage["coverage_percent"] <= 100:
+        errors.append("coverage_percent must be between 0 and 100.")
     title_only = isinstance(work, dict) and work.get("scope") == "title_only"
     if not processed and not title_only:
         if run.get("status") == "complete":
@@ -226,54 +559,20 @@ def main():
     unique_values(evidence_ids, "evidence.evidence_id", errors)
     evidence_set = set(evidence_ids)
 
-    def check_refs(refs, label):
-        if not isinstance(refs, list):
-            errors.append(f"{label}.evidence_refs must be an array.")
-            return
-        for ref in refs:
-            if not isinstance(ref, str) or ref not in evidence_set:
-                errors.append(f"{label} refers to missing evidence ID {ref!r}.")
-
-    claim_ids = []
-    for claim in claims:
-        if not isinstance(claim, dict):
-            errors.append("Each claim must be an object.")
-            continue
-        if isinstance(claim.get("claim_id"), str):
-            claim_ids.append(claim["claim_id"])
-        if claim.get("stage") not in STAGE_NAMES:
-            errors.append(f"Claim {claim.get('claim_id', '?')} has an invalid stage.")
-        check_refs(claim.get("evidence_refs"), f"claim {claim.get('claim_id', '?')}")
-        if claim.get("evidence_refs") == [] and (claim.get("kind") == "observation" or claim.get("confidence") != "low"):
-            errors.append(f"Claim {claim.get('claim_id', '?')} without source evidence must be a low-confidence inference or evaluation.")
-    unique_values(claim_ids, "claims.claim_id", errors)
-
-    card_ids = []
-    for card in cards:
-        if not isinstance(card, dict):
-            errors.append("Each technique card must be an object.")
-            continue
-        if isinstance(card.get("card_id"), str):
-            card_ids.append(card["card_id"])
-        check_refs(card.get("evidence_refs"), f"technique card {card.get('card_id', '?')}")
-        if card.get("evidence_refs") == [] and card.get("confidence") != "low":
-            errors.append(f"Technique card {card.get('card_id', '?')} without source evidence must have low confidence.")
-    unique_values(card_ids, "technique_cards.card_id", errors)
+    claim_ids = check_claims(claims, evidence_set, errors)
+    card_ids = check_cards(cards, evidence_set, errors)
     card_set = set(card_ids)
-
-    sop_ids = []
-    for sop in sops:
-        if not isinstance(sop, dict):
-            errors.append("Each SOP must be an object.")
-            continue
-        if isinstance(sop.get("sop_id"), str):
-            sop_ids.append(sop["sop_id"])
-        if not isinstance(sop.get("failure_signals"), list) or not sop["failure_signals"]:
-            errors.append(f"SOP {sop.get('sop_id', '?')} needs failure_signals.")
-        if not isinstance(sop.get("technique_card_id"), str) or sop["technique_card_id"] not in card_set:
-            errors.append(f"SOP {sop.get('sop_id', '?')} refers to a missing technique card.")
-    unique_values(sop_ids, "sops.sop_id", errors)
+    sop_ids = check_sops(sops, card_set, errors)
     sop_set = set(sop_ids)
+
+    check_stage_payloads(stages, errors)
+    check_practice(stages.get("practice"), card_set, sop_set, errors)
+    check_quality_review(quality_review, errors)
+    check_correction_log(correction_log, evidence_set,
+                         set(claim_ids) | card_set | sop_set | evidence_set, errors, warnings)
+
+    for path, refs in iter_evidence_refs(stages, "stages"):
+        check_refs(refs, path, evidence_set, errors)
 
     technique_stage = stages.get("technique", {})
     if isinstance(technique_stage, dict):
@@ -283,14 +582,6 @@ def main():
     for card in cards:
         if isinstance(card, dict) and card.get("sop_id") is not None and (not isinstance(card["sop_id"], str) or card["sop_id"] not in sop_set):
             errors.append(f"Technique card {card.get('card_id', '?')} refers to a missing SOP.")
-
-    practice = stages.get("practice", {})
-    if isinstance(practice, dict):
-        assignment = practice.get("assignment")
-        if isinstance(assignment, dict) and (not isinstance(assignment.get("technique_card_id"), str) or assignment["technique_card_id"] not in card_set):
-            errors.append("Practice assignment refers to a missing technique card.")
-        if practice.get("draft_status") == "evaluated" and practice.get("draft_evaluation") is None:
-            errors.append("Practice draft is marked evaluated but draft_evaluation is null.")
 
     mode = data.get("run", {}).get("mode") if isinstance(data.get("run"), dict) else None
     required_cards = {"quick": 1, "standard": 3, "deep": 3}.get(mode)
